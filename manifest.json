@@ -1,0 +1,107 @@
+{
+  "name": "CypherX Bot Platform",
+  "short_name": "CypherX",
+  "description": "A platform to deploy and manage Node.js bots",
+  "start_url": "/?source=pwa", 
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en",
+  "categories": ["productivity", "developer", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/pwa-icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/pwa-icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Deploy Bot",
+      "short_name": "Deploy",
+      "description": "Deploy a new bot",
+      "url": "/dashboard/deploy?source=pwa", 
+      "icons": [
+        {
+          "src": "/icons/deploy-icon.svg",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        },
+        {
+          "src": "/icons/deploy-icon.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Buy Coins",
+      "short_name": "Buy Coins",
+      "description": "Purchase coins",
+      "url": "/dashboard/billing?source=pwa", 
+      "icons": [
+        {
+          "src": "/icons/coins-icon.svg",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        },
+        {
+          "src": "/icons/coins-icon.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/icons/pwa-screenshot-wide.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "CypherX Dashboard"
+    },
+    {
+      "src": "/icons/pwa-screenshot-wide.svg",
+      "sizes": "1280x720",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "CypherX Dashboard"
+    },
+    {
+      "src": "/icons/pwa-screenshot-narrow.png",
+      "sizes": "640x1136",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "CypherX Mobile View"
+    },
+    {
+      "src": "/icons/pwa-screenshot-narrow.svg",
+      "sizes": "640x1136",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "CypherX Mobile View"
+    }
+  ]
+}

@@ -5,7 +5,6 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
-const AdmZip = require('adm-zip');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
@@ -14,6 +13,9 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const Database = require('better-sqlite3');
+
+const UPLOAD_DIR = path.join(__dirname, 'temp-uploads');
+const BOTS_DIR = path.join(__dirname, 'bots');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -98,13 +100,15 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 `);
 
-const upload = multer({ dest: path.join(__dirname, 'temp-uploads') });
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!fs.existsSync(BOTS_DIR)) fs.mkdirSync(BOTS_DIR, { recursive: true });
+
+const upload = multer({ dest: UPLOAD_DIR });
 
 app.use(helmet());
 app.use(cookieParser());
 app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'bots')));
 
 app.use(session({
   secret: JWT_SECRET,
@@ -114,7 +118,12 @@ app.use(session({
 }));
 
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
-app.use('/api/', limiter);
+
+app.use('/uploads', express.static(BOTS_DIR));
+app.use('/css', express.static(path.join(__dirname, '..', 'css')));
+app.use('/js', express.static(path.join(__dirname, '..', 'js')));
+app.use('/icons', express.static(path.join(__dirname, '..', 'icons')));
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 const authRequired = (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -129,7 +138,6 @@ const authRequired = (req, res, next) => {
 
 const getUser = (username) => db.prepare('SELECT * FROM users WHERE username = ?').get(username);
 const getUserById = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-const updateUserCoins = (id, delta) => db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(delta, id);
 
 const seedVerifiedBots = () => {
   const count = db.prepare('SELECT COUNT(*) as c FROM verified_bots').get().c;
@@ -174,21 +182,31 @@ function generateApiKey() {
   return key;
 }
 
-function getBotScript(nodeVersion, startScript) {
-  const runner = `const { spawn } = require('child_process');
-const path = require('path');
-const botDir = process.env.BOT_DIR || process.cwd();
-const cmd = process.env.BOT_CMD || (process.platform === 'win32' ? 'npm.cmd' : 'npm');
-const args = process.env.BOT_SCRIPT ? process.env.BOT_SCRIPT.split(' ') : ['${startScript}'];
-const proc = spawn(cmd, args, { cwd: botDir, shell: process.platform === 'win32', stdio: ['ignore','pipe','pipe'] });
-proc.stdout.on('data', d => console.log(d.toString()));
-proc.stderr.on('data', d => console.error(d.toString()));
-proc.on('exit', code => { console.error('Bot exited with', code); process.exit(code || 0); });
-process.on('SIGTERM', () => proc.kill('SIGTERM'));
-process.on('SIGINT', () => proc.kill('SIGINT'));`;
-  return runner;
-}
+const frontendRoot = path.join(__dirname, '..');
 
+const frontendFiles = [
+  { route: '/', file: 'login.html' },
+  { route: '/login', file: 'login.html' },
+  { route: '/register', file: 'register.html' },
+  { route: '/dashboard', file: 'dashboard.html' },
+  { route: '/settings', file: 'settings.html' },
+  { route: '/request', file: 'request.html' },
+  { route: '/delete-account', file: 'delete-account.html' },
+  { route: '/varified-bot', file: 'varified-bot.html' }
+];
+
+frontendFiles.forEach(({ route, file }) => {
+  app.get(route, (req, res) => {
+    res.sendFile(path.join(frontendRoot, file));
+  });
+});
+
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+app.use('/api/', limiter);
+
+// AUTH
 app.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ success: false, error: 'Missing credentials' });
@@ -219,6 +237,15 @@ app.post('/api/auth/session', (req, res) => {
   return res.json({ success: true, user: { id: user.id, username: user.username, email: user.email, coins: user.coins } });
 });
 
+app.post('/api/auth/change-password', authRequired, async (req, res) => {
+  const user = await ensureUser(req);
+  const { currentPassword, newPassword } = req.body;
+  if (!bcrypt.compareSync(currentPassword, getUserById(user.id).password)) return res.status(400).json({ success: false, error: 'Current password incorrect' });
+  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), user.id);
+  return res.json({ success: true });
+});
+
+// DASHBOARD
 app.get('/api/dashboard/stats', authRequired, async (req, res) => {
   const user = await ensureUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
@@ -313,15 +340,30 @@ app.post('/api/dashboard/bots/:id/delete', authRequired, async (req, res) => {
   return res.json({ success: true });
 });
 
+app.get('/api/dashboard/settings', authRequired, async (req, res) => {
+  const user = await ensureUser(req);
+  return res.json({ success: true, settings: { theme: 'dark', notifications: true, email: user.email || '' } });
+});
+
+app.post('/api/dashboard/settings', authRequired, async (req, res) => {
+  const user = await ensureUser(req);
+  const { email } = req.body;
+  db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, user.id);
+  return res.json({ success: true });
+});
+
+app.get('/api/dashboard/bot/:id/files', authRequired, async (req, res) => {
+  return res.json({ success: true, files: [{ name: 'index.js', path: '/', type: 'file' }, { name: 'package.json', path: '/', type: 'file' }] });
+});
+
+// BOTS / DEPLOY
 app.get('/api/node-usage', authRequired, (req, res) => res.json({ success: true, cpu: 42, memory: 128 }));
 app.get('/api/process-usage', authRequired, (req, res) => res.json({ success: true, bots: [] }));
-
 app.get('/api/deploy/:id', authRequired, async (req, res) => {
   const bot = db.prepare('SELECT * FROM bots WHERE id = ?').get(req.params.id);
   if (!bot) return res.status(404).json({ success: false, error: 'Bot not found' });
   return res.json({ success: true, bot });
 });
-
 app.get('/api/deploy/:id/logs', authRequired, (req, res) => res.json({ success: true, logs: 'No logs available yet.' }));
 app.get('/api/deploy/:id/logs/stream', authRequired, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -331,8 +373,32 @@ app.get('/api/deploy/:id/logs/stream', authRequired, (req, res) => {
   const interval = setInterval(() => res.write('data: {"type":"ping"}\n\n'), 30000);
   req.on('close', () => clearInterval(interval));
 });
-
 app.get('/api/dashboard/bot/:id/logs', authRequired, (req, res) => res.json({ success: true, logs: '' }));
+app.get('/api/deploy/list', authRequired, async (req, res) => {
+  const user = await ensureUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  const bots = db.prepare('SELECT * FROM bots WHERE userId = ?').all(user.id);
+  return res.json({ success: true, bots });
+});
+app.post('/api/deploy/:id/restart', authRequired, async (req, res) => {
+  db.prepare('UPDATE bots SET status = "running", updatedAt = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.id);
+  return res.json({ success: true });
+});
+app.post('/api/deploy/:id/stop', authRequired, (req, res) => {
+  db.prepare('UPDATE bots SET status = "stopped", updatedAt = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.id);
+  return res.json({ success: true });
+});
+app.get('/api/deploy/progress/:deploymentId', authRequired, (req, res) => {
+  return res.json({
+    success: true,
+    progress: {
+      progress: 100,
+      status: 'completed',
+      message: 'Deployment completed',
+      logs: [{ timestamp: Date.now(), message: 'Bot deployed successfully' }]
+    }
+  });
+});
 
 app.get('/api/deploy/verified-bots', (req, res) => {
   const bots = db.prepare('SELECT * FROM verified_bots WHERE isActive = 1').all();
@@ -409,35 +475,7 @@ app.post('/api/deploy/verified', authRequired, async (req, res) => {
   return res.json({ success: true, deploymentId, botId: result.lastInsertRowid, port: assignedPort });
 });
 
-app.get('/api/deploy/list', authRequired, async (req, res) => {
-  const user = await ensureUser(req);
-  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
-  const bots = db.prepare('SELECT * FROM bots WHERE userId = ?').all(user.id);
-  return res.json({ success: true, bots });
-});
-
-app.post('/api/deploy/:id/restart', authRequired, async (req, res) => {
-  db.prepare('UPDATE bots SET status = "running", updatedAt = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.id);
-  return res.json({ success: true });
-});
-
-app.post('/api/deploy/:id/stop', authRequired, (req, res) => {
-  db.prepare('UPDATE bots SET status = "stopped", updatedAt = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.id);
-  return res.json({ success: true });
-});
-
-app.get('/api/deploy/progress/:deploymentId', authRequired, (req, res) => {
-  return res.json({
-    success: true,
-    progress: {
-      progress: 100,
-      status: 'completed',
-      message: 'Deployment completed',
-      logs: [{ timestamp: Date.now(), message: 'Bot deployed successfully' }]
-    }
-  });
-});
-
+// PAYMENTS
 app.get('/api/payments/packages', (req, res) => {
   const country = req.query.country || 'kenya';
   const packages = {
@@ -542,30 +580,6 @@ app.post('/api/payments/paystack-webhook', express.raw({ type: 'application/json
   res.sendStatus(200);
 });
 
-app.post('/api/auth/change-password', authRequired, async (req, res) => {
-  const user = await ensureUser(req);
-  const { currentPassword, newPassword } = req.body;
-  if (!bcrypt.compareSync(currentPassword, getUserById(user.id).password)) return res.status(400).json({ success: false, error: 'Current password incorrect' });
-  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), user.id);
-  return res.json({ success: true });
-});
-
-app.get('/api/dashboard/settings', authRequired, async (req, res) => {
-  const user = await ensureUser(req);
-  return res.json({ success: true, settings: { theme: 'dark', notifications: true, email: user.email || '' } });
-});
-
-app.post('/api/dashboard/settings', authRequired, async (req, res) => {
-  const user = await ensureUser(req);
-  const { email } = req.body;
-  db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, user.id);
-  return res.json({ success: true });
-});
-
-app.get('/api/dashboard/bot/:id/files', authRequired, async (req, res) => {
-  return res.json({ success: true, files: [{ name: 'index.js', path: '/', type: 'file' }, { name: 'package.json', path: '/', type: 'file' }] });
-});
-
 app.get('/dashboard/admin/bots', authRequired, async (req, res) => {
   const user = await ensureUser(req);
   if (user.username !== 'admin') return res.status(403).json({ success: false, error: 'Forbidden' });
@@ -573,33 +587,13 @@ app.get('/dashboard/admin/bots', authRequired, async (req, res) => {
   return res.json({ success: true, bots });
 });
 
-app.use('/api/billing/request', express.static(path.join(__dirname, '..', 'request.html')));
-
-app.use(express.static(path.join(__dirname, '..')));
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'login.html'));
-});
-
-const frontendRoutes = ['/login', '/register', '/dashboard', '/settings', '/request', '/delete-account', '/varified-bot'];
-frontendRoutes.forEach(route => {
-  const htmlFile = route.replace('/', '') + '.html';
-  app.get(route, (req, res) => {
-    res.sendFile(path.join(__dirname, '..', htmlFile));
-  });
-  app.get(`${route}/*`, (req, res) => {
-    res.sendFile(path.join(__dirname, '..', htmlFile));
-  });
-});
+app.use('/api/billing/request', express.static(path.join(frontendRoot, 'request.html')));
 
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ success: false, error: 'Not found' });
   }
-  res.sendFile(path.join(__dirname, '..', 'login.html'));
+  res.sendFile(path.join(frontendRoot, 'login.html'));
 });
-
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => console.log(`CypherX backend running on http://localhost:${PORT}`));

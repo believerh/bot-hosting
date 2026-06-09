@@ -32,6 +32,19 @@
             });
         }
 
+        const STORAGE_KEY = 'cypherx_token';
+        const USER_KEY = 'cypherx_user';
+        function getStoredToken() {
+            try { return localStorage.getItem(STORAGE_KEY); } catch (_) { return null; }
+        }
+        function requireAuth() {
+            if (!getStoredToken()) {
+                window.location.href = '/login';
+            }
+        }
+        document.addEventListener('DOMContentLoaded', requireAuth);
+    </script>
+
         document.addEventListener('DOMContentLoaded', function() {
             initializeTheme();
         });

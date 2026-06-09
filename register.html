@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - CypherX Bot Platform</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .auth-container { max-width: 420px; margin: 4rem auto; padding: 2rem; background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e5e7eb); border-radius: var(--radius-lg, 12px); }
+        .auth-container h1 { text-align: center; margin-bottom: 1.5rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.4rem; font-weight: 600; }
+        .form-group input { width: 100%; padding: 0.6rem 0.8rem; border: 1px solid var(--border-color, #e5e7eb); border-radius: 6px; }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.6rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        .btn-primary { background: var(--primary, #2563eb); color: #fff; width: 100%; }
+        .btn-secondary { background: var(--bg-secondary, #f3f4f6); color: var(--text-primary, #111827); }
+        .auth-footer { text-align: center; margin-top: 1rem; font-size: 0.95rem; }
+        .auth-footer a { color: var(--primary, #2563eb); }
+        .alert { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
+        .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <h1>Create Account</h1>
+        <div id="register-alert"></div>
+        <form id="register-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required minlength="6" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+                <label for="confirmPassword">Confirm Password</label>
+                <input type="password" id="confirmPassword" name="confirmPassword" required minlength="6" autocomplete="new-password">
+            </div>
+            <button type="submit" class="btn btn-primary">Create Account</button>
+        </form>
+        <div class="auth-footer">
+            Already have an account? <a href="/login">Login</a>
+        </div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'cypherx_token';
+        const USER_KEY = 'cypherx_user';
+
+        document.getElementById('register-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const alertEl = document.getElementById('register-alert');
+            alertEl.innerHTML = '';
+            const form = e.target;
+            if (form.password.value !== form.confirmPassword.value) {
+                alertEl.innerHTML = `<div class="alert alert-error">Passwords do not match</div>`;
+                return;
+            }
+            const data = {
+                username: form.username.value.trim(),
+                email: form.email.value.trim(),
+                password: form.password.value
+            };
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (!res.ok || !result.success) {
+                    alertEl.innerHTML = `<div class="alert alert-error">${result.error || 'Registration failed'}</div>`;
+                    return;
+                }
+                localStorage.setItem(STORAGE_KEY, result.token);
+                localStorage.setItem(USER_KEY, JSON.stringify(result.user));
+                window.location.href = '/dashboard';
+            } catch (err) {
+                alertEl.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+            }
+        });
+    </script>
+</body>
+</html>

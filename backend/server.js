@@ -24,6 +24,81 @@ const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || 'pk_test_xxxxxxxx
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 const PAYSTACK_BASE_URL = process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co';
 
+const db = new Database(path.join(__dirname, 'cypherx.db'));
+db.pragma('journal_mode = WAL');
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  email TEXT,
+  coins INTEGER DEFAULT 0,
+  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS bots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  userId INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'stopped',
+  port INTEGER,
+  pid INTEGER,
+  repoUrl TEXT,
+  nodeVersion TEXT DEFAULT '20',
+  processType TEXT DEFAULT 'web',
+  startScript TEXT DEFAULT 'npm start',
+  envVars TEXT DEFAULT '{}',
+  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (userId) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS verified_bots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  displayName TEXT NOT NULL,
+  description TEXT,
+  author TEXT,
+  githubUrl TEXT,
+  stars INTEGER DEFAULT 0,
+  downloads INTEGER DEFAULT 0,
+  tags TEXT DEFAULT '[]',
+  processType TEXT DEFAULT 'web',
+  isActive INTEGER DEFAULT 1,
+  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  userId INTEGER NOT NULL,
+  reference TEXT UNIQUE NOT NULL,
+  amount REAL NOT NULL,
+  currency TEXT NOT NULL,
+  coins INTEGER NOT NULL,
+  status TEXT DEFAULT 'pending',
+  paystackStatus TEXT,
+  metadata TEXT,
+  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (userId) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  userId INTEGER NOT NULL,
+  type TEXT DEFAULT 'info',
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  read INTEGER DEFAULT 0,
+  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (userId) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS api_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  userId INTEGER NOT NULL UNIQUE,
+  key TEXT UNIQUE NOT NULL,
+  createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+  lastUsed DATETIME,
+  FOREIGN KEY (userId) REFERENCES users(id)
+);
+`);
+
 const app = express();
 app.use(cookieParser());
 app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
@@ -55,9 +130,7 @@ const authRequired = (req, res, next) => {
   }
 };
 
-const getUser = (username) => db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-const getUserById = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
-
+// db and tables initialized above
 const seedVerifiedBots = () => {
   const count = db.prepare('SELECT COUNT(*) as c FROM verified_bots').get().c;
   if (count > 0) return;
@@ -73,6 +146,9 @@ const seedVerifiedBots = () => {
   tx();
 };
 seedVerifiedBots();
+
+const getUser = (username) => db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+const getUserById = (id) => db.prepare('SELECT * FROM users WHERE id = ?').get(id);
 
 function ensureUser(req) {
   if (req.user && req.user.id) return getUserById(req.user.id);

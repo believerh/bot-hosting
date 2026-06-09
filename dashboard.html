@@ -855,11 +855,23 @@ function getFileLanguage(filename) {
 
 function updateGreeting() {
     const greetingHeader = document.getElementById('greeting-header');
+    const coinsCount = document.getElementById('coins-count');
     if (!greetingHeader) return;
     
     const now = new Date();
     const hour = now.getHours();
-    const username = 'majestic';
+    let username = 'User';
+    try {
+        const userStr = localStorage.getItem('cypherx_user');
+        if (userStr) {
+            const user = JSON.parse(userStr);
+            username = user.username || user.email || 'User';
+        }
+    } catch (_) {}
+    
+    if (coinsCount && username !== 'User') {
+        coinsCount.textContent = username;
+    }
     
     let greeting;
     if (hour >= 5 && hour < 12) {
@@ -875,7 +887,34 @@ function updateGreeting() {
     greetingHeader.innerHTML = `${greeting}, ${username}! <img src="/icons/wave.svg" alt="Wave" width="32" height="32" class="inline-icon-right">`;
 }
 
+async function refreshDashboardData() {
+    try {
+        const headers = { 'Content-Type': 'application/json' };
+        const token = localStorage.getItem(STORAGE_KEY);
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const statsRes = await fetch('/api/dashboard/stats', { headers });
+        const statsData = await statsRes.json();
+        if (statsData.success) {
+            const coinsEl = document.getElementById('coins-count');
+            if (coinsEl) coinsEl.textContent = statsData.stats.coins ?? coinsEl.textContent;
+        }
+    } catch (err) {
+        console.error('Failed to refresh dashboard data:', err);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+    requireAuth();
+    const userStr = localStorage.getItem(USER_KEY);
+    if (userStr) {
+        try {
+            const user = JSON.parse(userStr);
+            if (user && user.id) {
+                refreshDashboardData();
+            }
+        } catch (_) {}
+    }
     updateGreeting();
     loadBots();
     loadNotifications();

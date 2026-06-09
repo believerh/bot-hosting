@@ -17,6 +17,13 @@ const Database = require('better-sqlite3');
 const UPLOAD_DIR = path.join(__dirname, 'temp-uploads');
 const BOTS_DIR = path.join(__dirname, 'bots');
 
+const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'cypherx-secret-key-change-in-production';
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
+const PAYSTACK_BASE_URL = process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co';
+
 const app = express();
 app.use(cookieParser());
 app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));

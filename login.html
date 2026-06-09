@@ -47,6 +47,12 @@
         function getStoredToken() {
             try { return localStorage.getItem(STORAGE_KEY); } catch (_) { return null; }
         }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            if (getStoredToken()) {
+                window.location.href = '/dashboard';
+            }
+        });
 
         document.getElementById('login-form').addEventListener('submit', async (e) => {
             e.preventDefault();

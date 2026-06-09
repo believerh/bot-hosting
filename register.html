@@ -84,6 +84,15 @@
                 alertEl.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
             }
         });
+
+        function getStoredToken() {
+            try { return localStorage.getItem(STORAGE_KEY); } catch (_) { return null; }
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            if (getStoredToken()) {
+                window.location.href = '/dashboard';
+            }
+        });
     </script>
 </body>
 </html>

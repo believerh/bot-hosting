@@ -843,13 +843,25 @@ function hideTooltip() {
     }
 }
 
+const CYPHERX_AUTH_STORAGE_KEY = 'cypherx_token';
+
+function getAuthToken() {
+  try { return localStorage.getItem(CYPHERX_AUTH_STORAGE_KEY); } catch (_) { return null; }
+}
+
 async function apiCall(endpoint, options = {}) {
+    const token = getAuthToken();
+    const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers
+    };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    
     try {
         const response = await fetch(endpoint, {
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers
-            },
+            headers,
             ...options
         });
 
@@ -861,25 +873,18 @@ async function apiCall(endpoint, options = {}) {
         const data = await response.json();
         
         if (!response.ok) {
+            if (response.status === 401) {
+                localStorage.removeItem(CYPHERX_AUTH_STORAGE_KEY);
+                localStorage.removeItem('cypherx_user');
+                window.location.href = '/login';
+                throw new Error('Session expired. Please log in again.');
+            }
             throw new Error(data.error || data.message || 'API request failed');
         }
         
         return data;
     } catch (error) {
         console.error('API call error:', error, 'Endpoint:', endpoint);
-        
-        if (error.message.includes('Authentication required')) {
-            showNotification('Please log in again', 'error');
-            window.location.href = '/login';
-            throw error;
-        }
-        
-        if (error.message.includes('non-JSON response')) {
-            showNotification('Server error - please try again', 'error');
-            throw new Error('Server returned invalid response');
-        }
-        
-        showNotification(error.message, 'error');
         throw error;
     }
 }

@@ -10,6 +10,8 @@ Thumbs.db
 *.tmp
 *.temp
 cypherx.db
+cypherx.db-shm
+cypherx.db-wal
 temp-uploads/**/*
 bots/**/*
 public/bots

@@ -1,0 +1,11 @@
+{
+  "name": "cypherx-monorepo",
+  "version": "1.0.0",
+  "description": "CypherX Bot Hosting Platform",
+  "private": true,
+  "scripts": {
+    "start": "cd backend && node server.js",
+    "install-all": "cd backend && npm install",
+    "postinstall": "npm run install-all"
+  }
+}

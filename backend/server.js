@@ -18,6 +18,10 @@ const Database = require('better-sqlite3');
 const UPLOAD_DIR = path.join(__dirname, 'temp-uploads');
 const BOTS_DIR = path.join(__dirname, 'bots');
 
+// Ensure directories exist
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!fs.existsSync(BOTS_DIR)) fs.mkdirSync(BOTS_DIR, { recursive: true });
+
 const upload = multer({ dest: UPLOAD_DIR });
 
 const PORT = process.env.PORT || 3001;
@@ -106,7 +110,12 @@ CREATE TABLE IF NOT EXISTS api_keys (
 const app = express();
 app.use(cookieParser());
 app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 app.use(session({
   secret: JWT_SECRET,
@@ -121,7 +130,6 @@ app.use('/uploads', express.static(BOTS_DIR));
 app.use('/css', express.static(path.join(__dirname, '..', 'css')));
 app.use('/js', express.static(path.join(__dirname, '..', 'js')));
 app.use('/icons', express.static(path.join(__dirname, '..', 'icons')));
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 const authRequired = (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -688,8 +696,8 @@ app.post('/api/payments/paystack-verify', authRequired, async (req, res) => {
   }
 });
 
-app.post('/api/payments/paystack-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  const hash = require('crypto').createHmac('sha512', PAYSTACK_SECRET_KEY).update(req.body).digest('hex');
+app.post('/api/payments/paystack-webhook', async (req, res) => {
+  const hash = require('crypto').createHmac('sha512', PAYSTACK_SECRET_KEY).update(req.rawBody).digest('hex');
   if (hash !== req.headers['x-paystack-signature']) return res.sendStatus(401);
   const event = req.body;
   if (event.event === 'charge.success') {

@@ -97,7 +97,7 @@
 
         async function loadNotifications() {
             try {
-                const result = await fetch('/dashboard/notifications').then(r => r.json());
+                const result = await fetch('/api/dashboard/notifications').then(r => r.json());
                 const notificationList = document.getElementById('notificationList');
                 const badge = document.getElementById('notificationBadge');
                 
@@ -215,7 +215,7 @@
 
         async function markAllNotificationsRead() {
             try {
-                await fetch('/dashboard/notifications/read-all', { method: 'POST' }).then(r => r.json());
+                await fetch('/api/dashboard/notifications/read-all', { method: 'POST' }).then(r => r.json());
                 loadNotifications();
             } catch (error) {
                 console.error('Error marking all as read:', error);
@@ -792,7 +792,7 @@
             const newUsername = formData.get('newUsername');
             
             try {
-                const result = await apiCall('/dashboard/settings/username', {
+                const result = await apiCall('/api/dashboard/settings/username', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ newUsername })
@@ -812,7 +812,7 @@
             const newEmail = formData.get('newEmail');
             
             try {
-                const result = await apiCall('/dashboard/settings/email', {
+                const result = await apiCall('/api/dashboard/settings/email', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ newEmail })
@@ -839,7 +839,7 @@
             }
             
             try {
-                const result = await apiCall('/dashboard/settings/password', {
+                const result = await apiCall('/api/dashboard/settings/password', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ currentPassword, newPassword, confirmPassword })

@@ -8,6 +8,7 @@ const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
+const AdmZip = require('adm-zip');
 const axios = require('axios');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
@@ -16,6 +17,8 @@ const Database = require('better-sqlite3');
 
 const UPLOAD_DIR = path.join(__dirname, 'temp-uploads');
 const BOTS_DIR = path.join(__dirname, 'bots');
+
+const upload = multer({ dest: UPLOAD_DIR });
 
 const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || 'cypherx-secret-key-change-in-production';
@@ -244,14 +247,15 @@ app.post('/api/auth/change-password', authRequired, async (req, res) => {
 app.get('/api/dashboard/stats', authRequired, async (req, res) => {
   const user = await ensureUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
-  return res.json({ success: true, stats: { coins: user.coins, botCount: 5, cpuUsage: 34, uptime: '2d 4h' } });
+  const botCount = db.prepare('SELECT COUNT(*) as c FROM bots WHERE userId = ?').get(user.id).c;
+  return res.json({ success: true, stats: { coins: user.coins, botCount, cpuUsage: 34, uptime: '2d 4h' } });
 });
 
 app.get('/api/dashboard/notifications', authRequired, async (req, res) => {
   const user = await ensureUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
   const rows = db.prepare('SELECT * FROM notifications WHERE userId = ? ORDER BY createdAt DESC').all(user.id);
-  return res.json({ success: true, notifications: rows });
+  return res.json({ success: true, notifications: rows, unreadCount: rows.filter(r => !r.read).length });
 });
 
 app.post('/api/dashboard/notifications/:id/read', authRequired, async (req, res) => {
@@ -291,6 +295,12 @@ app.post('/api/dashboard/api-key/generate', authRequired, async (req, res) => {
   const key = generateApiKey();
   db.prepare('INSERT OR REPLACE INTO api_keys (userId, key) VALUES (?,?)').run(user.id, key);
   return res.json({ success: true, apiKey: key });
+});
+
+app.post('/api/dashboard/api-key/revoke', authRequired, async (req, res) => {
+  const user = await ensureUser(req);
+  db.prepare('DELETE FROM api_keys WHERE userId = ?').run(user.id);
+  return res.json({ success: true });
 });
 
 app.get('/api/dashboard/guide/:type', authRequired, async (req, res) => {
@@ -335,6 +345,31 @@ app.post('/api/dashboard/bots/:id/delete', authRequired, async (req, res) => {
   return res.json({ success: true });
 });
 
+app.post('/api/dashboard/delete-account', authRequired, async (req, res) => {
+  const user = await ensureUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+  const userBots = db.prepare('SELECT id FROM bots WHERE userId = ?').all(user.id);
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM bots WHERE userId = ?').run(user.id);
+    db.prepare('DELETE FROM notifications WHERE userId = ?').run(user.id);
+    db.prepare('DELETE FROM payments WHERE userId = ?').run(user.id);
+    db.prepare('DELETE FROM api_keys WHERE userId = ?').run(user.id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  })();
+
+  // Filesystem cleanup
+  for (const bot of userBots) {
+    const botDir = path.join(BOTS_DIR, bot.id.toString());
+    if (fs.existsSync(botDir)) {
+      fs.rmSync(botDir, { recursive: true, force: true });
+    }
+  }
+
+  return res.json({ success: true });
+});
+
 app.get('/api/dashboard/settings', authRequired, async (req, res) => {
   const user = await ensureUser(req);
   return res.json({ success: true, settings: { theme: 'dark', notifications: true, email: user.email || '' } });
@@ -354,8 +389,42 @@ app.get('/api/dashboard/bot/:id/files', authRequired, async (req, res) => {
 // BOTS / DEPLOY
 app.get('/api/node-usage', authRequired, (req, res) => res.json({ success: true, cpu: 42, memory: 128 }));
 app.get('/api/process-usage', authRequired, (req, res) => res.json({ success: true, bots: [] }));
+
+app.get('/api/deploy/server/stats', authRequired, async (req, res) => {
+  const activeBots = db.prepare('SELECT COUNT(*) as c FROM bots WHERE status = ?').get('running').c;
+  return res.json({
+    success: true,
+    stats: {
+      cpu: 15.5,
+      memory: 1.2 * 1024 * 1024 * 1024,
+      activeBots
+    }
+  });
+});
+
+app.get('/api/deploy/:id/stats', authRequired, async (req, res) => {
+  const botId = req.params.id;
+  const user = await ensureUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  const bot = db.prepare('SELECT * FROM bots WHERE id = ? AND userId = ?').get(botId, user.id);
+  if (!bot) return res.status(404).json({ success: false, error: 'Bot not found' });
+
+  return res.json({
+    success: true,
+    stats: {
+      status: bot.status,
+      cpu: Math.floor(Math.random() * 10),
+      memory: 50 * 1024 * 1024 + Math.floor(Math.random() * 100 * 1024 * 1024),
+      uptime: bot.createdAt,
+      restarts: 0
+    }
+  });
+});
+
 app.get('/api/deploy/:id', authRequired, async (req, res) => {
-  const bot = db.prepare('SELECT * FROM bots WHERE id = ?').get(req.params.id);
+  const user = await ensureUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+  const bot = db.prepare('SELECT * FROM bots WHERE id = ? AND userId = ?').get(req.params.id, user.id);
   if (!bot) return res.status(404).json({ success: false, error: 'Bot not found' });
   return res.json({ success: true, bot });
 });
@@ -446,28 +515,78 @@ app.post('/api/deploy/upload', authRequired, upload.single('botFile'), async (re
   const user = await ensureUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
   if ((user.coins || 0) < 10) return res.status(400).json({ success: false, error: 'Insufficient coins. You need 10 coins to deploy.' });
+
   const { botName, description, config = [], nodeVersion = '20' } = req.body;
   const assignedPort = 3000 + Math.floor(Math.random() * 5000);
-  const insert = db.prepare('INSERT INTO bots (userId, name, description, status, port, nodeVersion, processType, startScript) VALUES (?,?,?,?,?,?,?,?)');
-  const result = insert.run(user.id, botName || 'Uploaded Bot', description || '', 'running', assignedPort, nodeVersion, 'web', 'npm start');
+
+  const insert = db.prepare('INSERT INTO bots (userId, name, description, status, port, nodeVersion, processType, startScript, envVars) VALUES (?,?,?,?,?,?,?,?,?)');
+  const result = insert.run(user.id, botName || 'Uploaded Bot', description || '', 'running', assignedPort, nodeVersion, 'web', 'npm start', JSON.stringify(config));
+
+  const botId = result.lastInsertRowid;
+  const botDir = path.join(BOTS_DIR, botId.toString());
+
+  if (req.file) {
+    try {
+      const zip = new AdmZip(req.file.path);
+      const zipEntries = zip.getEntries();
+
+      // Basic Zip Slip Protection
+      for (const entry of zipEntries) {
+        if (entry.entryName.includes('..')) {
+          throw new Error('Invalid entry name in zip');
+        }
+      }
+
+      zip.extractAllTo(botDir, true);
+      fs.unlinkSync(req.file.path);
+    } catch (e) {
+      console.error('Extraction error:', e);
+    }
+  }
+
   db.prepare('UPDATE users SET coins = coins - 10 WHERE id = ?').run(user.id);
   const deploymentId = uuidv4();
-  return res.json({ success: true, deploymentId, botId: result.lastInsertRowid, port: assignedPort });
+  return res.json({ success: true, deploymentId, botId, port: assignedPort });
 });
 
 app.post('/api/deploy/verified', authRequired, async (req, res) => {
   const user = await ensureUser(req);
   if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
   if ((user.coins || 0) < 10) return res.status(400).json({ success: false, error: 'Insufficient coins. You need 10 coins to deploy.' });
+
   const { verifiedBotId, botName, description, config = [], nodeVersion = '20' } = req.body;
-  const bot = db.prepare('SELECT * FROM verified_bots WHERE id = ?').get(verifiedBotId);
-  if (!bot) return res.status(404).json({ success: false, error: 'Verified bot not found' });
+  const vBot = db.prepare('SELECT * FROM verified_bots WHERE id = ?').get(verifiedBotId);
+  if (!vBot) return res.status(404).json({ success: false, error: 'Verified bot not found' });
+
   const assignedPort = 3000 + Math.floor(Math.random() * 5000);
-  const insert = db.prepare('INSERT INTO bots (userId, name, description, status, port, nodeVersion, processType, startScript) VALUES (?,?,?,?,?,?,?,?)');
-  const result = insert.run(user.id, botName || bot.displayName, description || bot.description, 'running', assignedPort, nodeVersion, bot.processType || 'web', 'npm start');
+  const insert = db.prepare('INSERT INTO bots (userId, name, description, status, port, nodeVersion, processType, startScript, envVars) VALUES (?,?,?,?,?,?,?,?,?)');
+  const result = insert.run(user.id, botName || vBot.displayName, description || vBot.description, 'running', assignedPort, nodeVersion, vBot.processType || 'web', 'npm start', JSON.stringify(config));
+
+  const botId = result.lastInsertRowid;
+  const botDir = path.join(BOTS_DIR, botId.toString());
+  if (!fs.existsSync(botDir)) fs.mkdirSync(botDir, { recursive: true });
+  fs.writeFileSync(path.join(botDir, 'index.js'), `// Template for ${vBot.displayName}\nconsole.log("Bot started on port ${assignedPort}");`);
+
   db.prepare('UPDATE users SET coins = coins - 10 WHERE id = ?').run(user.id);
   const deploymentId = uuidv4();
-  return res.json({ success: true, deploymentId, botId: result.lastInsertRowid, port: assignedPort });
+  return res.json({ success: true, deploymentId, botId, port: assignedPort });
+});
+
+app.delete('/api/deploy/:id', authRequired, async (req, res) => {
+  const user = await ensureUser(req);
+  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+  const botId = req.params.id;
+  const bot = db.prepare('SELECT * FROM bots WHERE id = ? AND userId = ?').get(botId, user.id);
+  if (!bot) return res.status(404).json({ success: false, error: 'Bot not found' });
+
+  db.prepare('DELETE FROM bots WHERE id = ?').run(botId);
+  const botDir = path.join(BOTS_DIR, botId.toString());
+  if (fs.existsSync(botDir)) {
+    fs.rmSync(botDir, { recursive: true, force: true });
+  }
+
+  return res.json({ success: true });
 });
 
 // PAYMENTS
@@ -575,7 +694,7 @@ app.post('/api/payments/paystack-webhook', express.raw({ type: 'application/json
   res.sendStatus(200);
 });
 
-app.get('/dashboard/admin/bots', authRequired, async (req, res) => {
+app.get('/api/dashboard/admin/bots', authRequired, async (req, res) => {
   const user = await ensureUser(req);
   if (user.username !== 'admin') return res.status(403).json({ success: false, error: 'Forbidden' });
   const bots = db.prepare('SELECT bots.*, users.username FROM bots JOIN users ON bots.userId = users.id').all();

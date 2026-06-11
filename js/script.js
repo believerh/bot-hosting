@@ -734,7 +734,7 @@ function showDeleteAccountModal() {
     if (modal) {
         modal.style.display = 'block';
     } else {
-        window.location.href = '/dashboard/delete-account';
+        window.location.href = '/delete-account';
     }
 }
 
@@ -761,7 +761,7 @@ async function confirmDeleteAccount() {
     }
     
     try {
-        const result = await apiCall('/dashboard/delete-account', { method: 'POST' });
+        const result = await apiCall('/api/dashboard/delete-account', { method: 'POST' });
         if (result.success) {
             alert('Account deleted successfully. You will be redirected to the home page.');
             window.location.href = '/';
@@ -2042,7 +2042,7 @@ function closeAllModals() {
 
 async function loadApiKeyStatus() {
     try {
-        const result = await apiCall('/dashboard/api-key/status');
+        const result = await apiCall('/api/dashboard/api-key/status');
         
         if (result && result.success) {
             const statusDiv = document.getElementById('api-key-status');
@@ -2090,7 +2090,7 @@ async function generateApiKey() {
     try {
         showNotification('Generating API key...', 'info');
         
-        const result = await apiCall('/dashboard/api-key/generate', {
+        const result = await apiCall('/api/dashboard/api-key/generate', {
             method: 'POST'
         });
 
@@ -2138,7 +2138,7 @@ async function revokeApiKey() {
     try {
         showNotification('Revoking API key...', 'info');
         
-        const result = await apiCall('/dashboard/api-key/revoke', {
+        const result = await apiCall('/api/dashboard/api-key/revoke', {
             method: 'POST'
         });
 

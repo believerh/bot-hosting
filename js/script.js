@@ -8,6 +8,22 @@ const CYPHERX_CONFIG = {
     paymentMode: 'popup'
 };
 
+// Load dynamic config from backend
+async function loadDynamicConfig() {
+    try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        if (data.paystackPublicKey) {
+            CYPHERX_CONFIG.paystackPublicKey = data.paystackPublicKey;
+        }
+        if (data.currency) CYPHERX_CONFIG.currency = data.currency;
+        if (data.country) CYPHERX_CONFIG.country = data.country;
+    } catch (e) {
+        console.warn('Failed to load dynamic config, using defaults:', e);
+    }
+}
+loadDynamicConfig();
+
 const CypherXPaystack = {
     isLoaded: false,
     isOpen: false,

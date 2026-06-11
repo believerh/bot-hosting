@@ -27,7 +27,8 @@ const PAYSTACK_PUBLIC_KEY = process.env.PAYSTACK_PUBLIC_KEY || 'pk_test_xxxxxxxx
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 const PAYSTACK_BASE_URL = process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co';
 
-const db = new Database(path.join(__dirname, 'cypherx.db'));
+const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'cypherx.db');
+const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 
 db.exec(`
@@ -192,6 +193,14 @@ const frontendFiles = [
   { route: '/delete-account', file: 'delete-account.html' },
   { route: '/varified-bot', file: 'varified-bot.html' }
 ];
+
+app.get('/api/config', (req, res) => {
+  res.json({
+    paystackPublicKey: PAYSTACK_PUBLIC_KEY,
+    currency: 'KES',
+    country: 'kenya'
+  });
+});
 
 frontendFiles.forEach(({ route, file }) => {
   app.get(route, (req, res) => {
